@@ -15,6 +15,8 @@
 #
 #   $ docker exec -it geneerik-boinc-apk-builder bash
 #
+# build with buildboincapkall.sh command
+#
 # Gene Erik
 # --
 
@@ -152,7 +154,7 @@ RUN ( echo 'diff --git a/client/hostinfo_unix.cpp b/client/hostinfo_unix.cpp' > 
 #TODO: add sed safety checks
 	
 #patch to set API version and eliminate buildToolsVersion
-#from /opt/src/boinc/android/BOINC/build.gradle
+#from /opt/src/boinc/android/BOINC/app/build.gradle
 ENV MIN_ANDROID_API_VERSION ${MIN_ANDROID_API_VERSION:-16}
 ENV APK_COMPILE_API_VERSION ${APK_COMPILE_API_VERSION:-23}
 ENV APK_TARGET_API_VERSION ${APK_TARGET_API_VERSION:-23}
@@ -201,7 +203,7 @@ RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/getboinc.sh' ) && \
 ##Note: these should only be needed when building the APK
 ##and are downloaded automatically
 	
-#TODO: bring this to a working start with ndk 16
+#P TODO: bring this to a working start with ndk 16
 #0 is a magic version number that will make the script use
 #sdkmanager get the latest NDK rather than downloading a specific one
 ENV ANDROID_NDK_VERSION ${ANDROID_NDK_VERSION:-r15c}
@@ -277,21 +279,61 @@ RUN ( bash -c 'echo -e "#!/usr/bin/expect -d\n\n" > /usr/local/bin/acceptandroid
 	( echo '}' >> /usr/local/bin/acceptandroidsdklics.sh ) && \
 	chmod +x /usr/local/bin/acceptandroidsdklics.sh
 
-#P TODO: add script to build all targets before building apk as they are
-#needed for apk assets: arm64 arm mips mips64 x86_64 x86
-#P TODO: add code to build apk; this will loop through building all targets
-ENV BOINC_APK_BUILD_TASK ${BOINC_APK_BUILD_TASK:-build}
+# script to build all targets: arm64 arm mips mips64 x86_64 x86
+RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/buildboincforalltargets.sh' ) && \
+	( echo 'set -euf -o pipefail' >> /usr/local/bin/buildboincforalltargets.sh ) && \
+	( echo 'targetArchList=( "arm" "arm64" "x86_64" "x86" "mips" "mips64" )' >> /usr/local/bin/buildboincforalltargets.sh ) && \
+	( echo 'for curTargetArch in "${targetArchList[@]}"' >> /usr/local/bin/buildboincforalltargets.sh ) && \
+	( echo 'do' >> /usr/local/bin/buildboincforalltargets.sh ) && \
+	( echo '	ANDROID_ARCH=${curTargetArch} buildboinc.sh' >> /usr/local/bin/buildboincforalltargets.sh ) && \
+	( echo 'done' >> /usr/local/bin/buildboincforalltargets.sh ) && \
+	( echo 'echo "All targets built successfully for boinc!"' >> /usr/local/bin/buildboincforalltargets.sh ) && \
+	chmod +x /usr/local/bin/buildboincforalltargets.sh
 
+# code to build apk
 #WARNING: this command currently disables linting during the gradle build of the app;
 #This should not be done, but is currently REQUIRED because the source code
 #structure violates some rules
-#cp /opt/boinc_build/${ANDROID_ARCH}/stage/usr/local/bin/{boinc,boinccmd} /opt/src/boinc/android/BOINC/app/src/main/assets/${TRANSLATED_ANDROID_ARCH}/
-#rm /opt/src/boinc/android/BOINC/app/src/main/assets/armeabi-v7a/placeholder.txt
-#./gradlew ${BOINC_APK_BUILD_TASK} -x lint 2>&1 | tee ../build_apk_arm.log
-#cp /opt/src/boinc/android/BOINC/app/build/outputs/apk/*.apk /opt/boinc_build/
+RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/buildboincapkonly.sh' ) && \
+	( echo 'set -euf -o pipefail' >> /usr/local/bin/buildboincapkonly.sh ) && \
+	( echo 'cd /opt/src/boinc/android/BOINC' >> /usr/local/bin/buildboincapkonly.sh ) && \
+	( echo './gradlew ${BOINC_APK_BUILD_TASK} -x lint 2>&1 | tee ../build_apk_arm.log' >> /usr/local/bin/buildboincapkonly.sh ) && \
+	( echo 'cp -a /opt/src/boinc/android/BOINC/app/build/outputs/apk /opt/boinc_build/' >> /usr/local/bin/buildboincapkonly.sh ) && \
+	( echo 'echo "Successfully built apk for boinc!"' >> /usr/local/bin/buildboincapkonly.sh ) && \
+	chmod +x /usr/local/bin/buildboincapkonly.sh
 
-#P TODO: patch for gradle plugin v 3.0.1
-#need google() repo
+#The other build tasks should do something like this
+#eg. for TRANSLATED_ANDROID_ARCH: when ANDROID_ARCH is arm TRANSLATED_ANDROID_ARCH is armeabi-v7a
+#cp /opt/boinc_build/${ANDROID_ARCH}/stage/usr/local/bin/{boinc,boinccmd} /opt/src/boinc/android/BOINC/app/src/main/assets/${TRANSLATED_ANDROID_ARCH}/
+#rm /opt/src/boinc/android/BOINC/app/src/main/assets/${TRANSLATED_ANDROID_ARCH}/placeholder.txt
+
+# code to build all targets then apk; this is the master scipt!
+RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/buildboincapkall.sh' ) && \
+	( echo 'set -euf -o pipefail' >> /usr/local/bin/buildboincapkall.sh ) && \
+	( echo 'buildboincforalltargets.sh && buildboincapkonly.sh' >> /usr/local/bin/buildboincapkall.sh ) && \
+	( echo 'echo "Successfully built all targets and loaded apk for boinc!"' >> /usr/local/bin/buildboincapkall.sh ) && \
+	( echo 'echo "Today is a great day for science"' >> /usr/local/bin/buildboincapkall.sh ) && \
+	chmod +x /usr/local/bin/buildboincapkall.sh
+
+ENV BOINC_APK_BUILD_TASK ${BOINC_APK_BUILD_TASK:-build}
+
+# patch for gradle plugin v 3.0.1 so specifying build tools is no longer required
+RUN ( echo 'diff --git a/android/BOINC/build.gradle b/android/BOINC/build.gradle' > /boinc_patches/apk_build_gradle.patch ) && \
+	( echo 'index e7e3c60..0f78b49 100644' >> /boinc_patches/apk_build_gradle.patch ) && \
+	( echo '--- a/android/BOINC/build.gradle' >> /boinc_patches/apk_build_gradle.patch ) && \
+	( echo '+++ b/android/BOINC/build.gradle' >> /boinc_patches/apk_build_gradle.patch ) && \
+	( echo '@@ -2,9 +2,10 @@' >> /boinc_patches/apk_build_gradle.patch ) && \
+	( echo ' buildscript {' >> /boinc_patches/apk_build_gradle.patch ) && \
+	( echo '     repositories {' >> /boinc_patches/apk_build_gradle.patch ) && \
+	( echo '         jcenter()' >> /boinc_patches/apk_build_gradle.patch ) && \
+	( echo '+        google()' >> /boinc_patches/apk_build_gradle.patch ) && \
+	( echo '     }' >> /boinc_patches/apk_build_gradle.patch ) && \
+	( echo '     dependencies {' >> /boinc_patches/apk_build_gradle.patch ) && \
+	( echo "-        classpath 'com.android.tools.build:gradle:2.2.2'" >> /boinc_patches/apk_build_gradle.patch ) && \
+	( echo "+        classpath 'com.android.tools.build:gradle:3.0.1'" >> /boinc_patches/apk_build_gradle.patch ) && \
+	( echo '     }' >> /boinc_patches/apk_build_gradle.patch ) && \
+	( echo ' }' >> /boinc_patches/apk_build_gradle.patch ) && \
+	( echo '' >> /boinc_patches/apk_build_gradle.patch )
 
 #TODO: patch build boinc libs and wrapper with -D__ANDROID_API__=${COMPILE_SDK}
 ENV ANDROID_TC_ARGS ${ANDROID_TC_ARGS:---deprecated-headers}
@@ -336,7 +378,7 @@ RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/buildboinc.sh' ) && \
 	( echo '	assert_no_fatal.sh build_wrapper_${ANDROID_ARCH}.log' >> /usr/local/bin/buildboinc.sh ) && \
 	( echo '	cp -a /opt/src/boinc/samples/wrapper/wrapper /opt/boinc_build/${ANDROID_ARCH}/' >> /usr/local/bin/buildboinc.sh ) && \
 	( echo 'fi' >> /usr/local/bin/buildboinc.sh ) && \
-	( echo 'echo "successfully built boinc apk!!"' >> /usr/local/bin/buildboinc.sh ) && \
+	( echo 'echo "successfully built boinc for android API ${COMPILE_SDK} on arch ${ANDROID_ARCH}!!"' >> /usr/local/bin/buildboinc.sh ) && \
 	chmod +x /usr/local/bin/buildboinc.sh
 
 #Patch to set -e on ALL of the build scripts so that it will die when something fails
