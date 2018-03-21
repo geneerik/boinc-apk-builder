@@ -149,15 +149,21 @@ RUN ( echo 'diff --git a/client/hostinfo_unix.cpp b/client/hostinfo_unix.cpp' > 
 	( echo ' ' >> /boinc_patches/boinc_hostinfo.cpp.patch ) && \
 	( echo ' #if HAVE_SYS_SYSCTL_H' >> /boinc_patches/boinc_hostinfo.cpp.patch )
 
-#todo: add sed safety checks
+#TODO: add sed safety checks
 	
 #patch to set API version and eliminate buildToolsVersion
 #from /opt/src/boinc/android/BOINC/build.gradle
-ENV ANDROID_API_VERSION ${ANDROID_API_VERSION:-23}
+ENV MIN_ANDROID_API_VERSION ${MIN_ANDROID_API_VERSION:-16}
+ENV APK_COMPILE_API_VERSION ${APK_COMPILE_API_VERSION:-23}
+ENV APK_TARGET_API_VERSION ${APK_TARGET_API_VERSION:-23}
+
+#TODO: the regex matches here for sed are pretty lame and dangerous; this should be made safer
 RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/patch_build_gradle.sh' ) && \
 	( echo 'set -euf -o pipefail' >> /usr/local/bin/patch_build_gradle.sh ) && \
-	( echo 'sed -i -e "s@^.*compileSdkVersion\\s*\\(\\d*\\).*@compileSdkVersion ${ANDROID_API_VERSION}@" /opt/src/boinc/android/BOINC/app/build.gradle' >> /usr/local/bin/patch_build_gradle.sh ) && \
+	( echo 'sed -i -e "s@^.*compileSdkVersion\\s*\\(\\d*\\).*@compileSdkVersion ${APK_COMPILE_API_VERSION}@" /opt/src/boinc/android/BOINC/app/build.gradle' >> /usr/local/bin/patch_build_gradle.sh ) && \
 	( echo 'sed -i -e "s@^.*buildToolsVersion\\s*\\"\\(.*\\)\\".*@@" /opt/src/boinc/android/BOINC/app/build.gradle' >> /usr/local/bin/patch_build_gradle.sh ) && \
+	( echo 'sed -i -e "s@^.*minSdkVersion\\s*\\(\\d*\\).*@        minSdkVersion ${MIN_ANDROID_API_VERSION}@" /opt/src/boinc/android/BOINC/app/build.gradle' >> /usr/local/bin/patch_build_gradle.sh ) && \
+	( echo 'sed -i -e "s@^.*targetSdkVersion\\s*\\(\\d*\\).*@        targetSdkVersion ${APK_TARGET_API_VERSION}@" /opt/src/boinc/android/BOINC/app/build.gradle' >> /usr/local/bin/patch_build_gradle.sh ) && \
 	chmod +x /usr/local/bin/patch_build_gradle.sh
 
 #Original version was 2.14.1, but that is too low for
@@ -195,12 +201,15 @@ RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/getboinc.sh' ) && \
 ##Note: these should only be needed when building the APK
 ##and are downloaded automatically
 	
+#TODO: bring this to a working start with ndk 16
+#0 is a magic version number that will make the script use
+#sdkmanager get the latest NDK rather than downloading a specific one
 ENV ANDROID_NDK_VERSION ${ANDROID_NDK_VERSION:-r15c}
 	
 #Create script to get android ndk and sdk and create build tool chain
 RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/getandtools.sh' ) && \
 	( echo 'set -euf -o pipefail' >> /usr/local/bin/getandtools.sh ) && \
-    ( echo 'export COMPILE_SDK=`sed -n "s/.*compileSdkVersion\\s*\\(\\d*\\)/\\1/p" /opt/src/boinc/android/BOINC/app/build.gradle`' >> /usr/local/bin/getandtools.sh ) && \
+    ( echo 'export COMPILE_SDK=`sed -n "s/.*minSdkVersion\\s*\\(\\d*\\)/\\1/p" /opt/src/boinc/android/BOINC/app/build.gradle`' >> /usr/local/bin/getandtools.sh ) && \
 	( echo 'export ANDROID_TC="${ANDROID_HOME}/Toolchains"' >> /usr/local/bin/getandtools.sh ) && \
 	( echo 'export ANDROID_LIBPATH="${ANDROID_TC}/${ANDROID_ARCH}/sysroot/usr/lib/"' >> /usr/local/bin/getandtools.sh ) && \
 	( echo 'export OPENSSL_SRC=/opt/src/openssl-${OPENSSL_VERSION}' >> /usr/local/bin/getandtools.sh ) && \
@@ -213,11 +222,13 @@ RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/getandtools.sh' ) && \
 	( echo '	touch /root/.android/repositories.cfg' >> /usr/local/bin/getandtools.sh ) && \
 	( echo '	acceptandroidsdklics.sh' >> /usr/local/bin/getandtools.sh ) && \
 	( echo '	${ANDROID_HOME}/tools/bin/sdkmanager --update' >> /usr/local/bin/getandtools.sh ) && \
-	( echo '	#disabled becuase the current latest ndk breaks stuff' >> /usr/local/bin/getandtools.sh ) && \
-	( echo '	#${ANDROID_HOME}/tools/bin/sdkmanager "ndk-bundle"' >> /usr/local/bin/getandtools.sh ) && \
-	( echo '	set +f' >> /usr/local/bin/getandtools.sh ) && \
-	( echo '	wget -O /tmp/ndk.zip https://dl.google.com/android/repository/android-ndk-${ANDROID_NDK_VERSION}-linux-x86_64.zip && unzip -d ${ANDROID_HOME} /tmp/ndk.zip && mv ${ANDROID_HOME}/android-ndk-${ANDROID_NDK_VERSION} ${ANDROID_NDK_HOME}' >> /usr/local/bin/getandtools.sh ) && \
-	( echo '	set -f' >> /usr/local/bin/getandtools.sh ) && \
+	( echo '	if [[ "${ANDROID_NDK_VERSION}" == "0" ]]; then' >> /usr/local/bin/getandtools.sh ) && \
+	( echo '		${ANDROID_HOME}/tools/bin/sdkmanager "ndk-bundle"' >> /usr/local/bin/getandtools.sh ) && \
+	( echo '	else' >> /usr/local/bin/getandtools.sh ) && \
+	( echo '		set +f' >> /usr/local/bin/getandtools.sh ) && \
+	( echo '		wget -O /tmp/ndk.zip https://dl.google.com/android/repository/android-ndk-${ANDROID_NDK_VERSION}-linux-x86_64.zip && unzip -d ${ANDROID_HOME} /tmp/ndk.zip && mv ${ANDROID_HOME}/android-ndk-${ANDROID_NDK_VERSION} ${ANDROID_NDK_HOME}' >> /usr/local/bin/getandtools.sh ) && \
+	( echo '		set -f' >> /usr/local/bin/getandtools.sh ) && \
+	( echo '	fi' >> /usr/local/bin/getandtools.sh ) && \
 	( echo '	${ANDROID_HOME}/tools/bin/sdkmanager "platforms;android-${COMPILE_SDK}"' >> /usr/local/bin/getandtools.sh ) && \
 	( echo '	${ANDROID_HOME}/tools/bin/sdkmanager "extras;android;m2repository" "extras;google;m2repository" "extras;google;google_play_services"' >> /usr/local/bin/getandtools.sh ) && \
 	( echo '	${ANDROID_HOME}/tools/bin/sdkmanager "cmake;${ANDROID_CMAKE_VERSION}"' >> /usr/local/bin/getandtools.sh ) && \
@@ -266,25 +277,23 @@ RUN ( bash -c 'echo -e "#!/usr/bin/expect -d\n\n" > /usr/local/bin/acceptandroid
 	( echo '}' >> /usr/local/bin/acceptandroidsdklics.sh ) && \
 	chmod +x /usr/local/bin/acceptandroidsdklics.sh
 
-#Note: this command currently disables linting during the gradle build of the app;
-#This should not be done, but is currently REQUIRED because the source code
-#structure violates some rules
-#TODO: add script to build all targets before building apk as they are
+#P TODO: add script to build all targets before building apk as they are
 #needed for apk assets: arm64 arm mips mips64 x86_64 x86
-#TODO: translate android arch into terms used in apk assets
-#TODO: add code to build apk; this will loop through building all targets
+#P TODO: add code to build apk; this will loop through building all targets
 ENV BOINC_APK_BUILD_TASK ${BOINC_APK_BUILD_TASK:-build}
 
-#NOTE: Looks like build_boinc is supposed to copy the files.  did it not work?
+#WARNING: this command currently disables linting during the gradle build of the app;
+#This should not be done, but is currently REQUIRED because the source code
+#structure violates some rules
 #cp /opt/boinc_build/${ANDROID_ARCH}/stage/usr/local/bin/{boinc,boinccmd} /opt/src/boinc/android/BOINC/app/src/main/assets/${TRANSLATED_ANDROID_ARCH}/
 #rm /opt/src/boinc/android/BOINC/app/src/main/assets/armeabi-v7a/placeholder.txt
 #./gradlew ${BOINC_APK_BUILD_TASK} -x lint 2>&1 | tee ../build_apk_arm.log
-#cp opt/src/boinc/android/BOINC/app/build/outputs/apk/*.apk /opt/boinc_build/
+#cp /opt/src/boinc/android/BOINC/app/build/outputs/apk/*.apk /opt/boinc_build/
 
-#todo: patch for gradle plugin v 3.0.1
+#P TODO: patch for gradle plugin v 3.0.1
 #need google() repo
 
-#Todo: patch build openssl, curl, boinc with -D__ANDROID_API__=${COMPILE_SDK}
+#TODO: patch build boinc libs and wrapper with -D__ANDROID_API__=${COMPILE_SDK}
 ENV ANDROID_TC_ARGS ${ANDROID_TC_ARGS:---deprecated-headers}
 
 ENV TOOL_TO_BUILD_TC ${TOOL_TO_BUILD_TC:-py}
@@ -292,13 +301,21 @@ ENV TOOL_TO_BUILD_TC ${TOOL_TO_BUILD_TC:-py}
 #Create boinc build script
 RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/buildboinc.sh' ) && \
 	( echo 'set -euf -o pipefail' >> /usr/local/bin/buildboinc.sh ) && \
-	( echo 'if [[ ! -e ${ANDROID_TC}/${ANDROID_ARCH} ]]; then' >> /usr/local/bin/buildboinc.sh ) && \
-	( echo '	if [[ ${TOOL_TO_BUILD_TC} == "sh" ]]; then' >> /usr/local/bin/buildboinc.sh ) && \
-	( echo '		${ANDROID_NDK_HOME}/build/tools/make-standalone-toolchain.sh --arch=${ANDROID_ARCH} --platform=android-${COMPILE_SDK} --install-dir=${ANDROID_TC}/${ANDROID_ARCH} ${ANDROID_TC_ARGS}' >> /usr/local/bin/buildboinc.sh ) && \
-	( echo '	else' >> /usr/local/bin/buildboinc.sh ) && \
-	( echo '		${ANDROID_NDK_HOME}/build/tools/make_standalone_toolchain.py --arch ${ANDROID_ARCH} --api ${COMPILE_SDK} --install-dir ${ANDROID_TC}/${ANDROID_ARCH} ${ANDROID_TC_ARGS}' >> /usr/local/bin/buildboinc.sh ) && \
-	( echo '	fi' >> /usr/local/bin/buildboinc.sh ) && \
+	( echo 'export COMPILE_SDK=`sed -n "s/.*minSdkVersion\\s*\\(\\d*\\)/\\1/p" /opt/src/boinc/android/BOINC/app/build.gradle`' >> /usr/local/bin/buildboinc.sh ) && \
+	( echo 'if [[ ${ANDROID_ARCH:(-2)} == "64" && ${COMPILE_SDK} -lt 21 ]]; then' >> /usr/local/bin/buildboinc.sh ) && \
+	( echo '	echo "WARNING: target sdk version for compile ${COMPILE_SDK} is lower than the required SDK version for 64 bit targets, which ${ANDROID_ARCH} is.  The compile sdk will be bumped up to 21 for the binary compiles with the stand alone tool chain"' >> /usr/local/bin/buildboinc.sh ) && \
+	( echo '	export COMPILE_SDK=21' >> /usr/local/bin/buildboinc.sh ) && \
 	( echo 'fi' >> /usr/local/bin/buildboinc.sh ) && \
+	( echo 'if [[ ! -e ${ANDROID_HOME}/platforms/android-${COMPILE_SDK} ]]; then' >> /usr/local/bin/buildboinc.sh ) && \
+	( echo '	${ANDROID_HOME}/tools/bin/sdkmanager "platforms;android-${COMPILE_SDK}"' >> /usr/local/bin/buildboinc.sh ) && \
+	( echo 'fi' >> /usr/local/bin/buildboinc.sh ) && \
+	( echo '#if [[ ! -e ${ANDROID_TC}/${ANDROID_ARCH} ]]; then' >> /usr/local/bin/buildboinc.sh ) && \
+	( echo '	if [[ ${TOOL_TO_BUILD_TC} == "sh" ]]; then' >> /usr/local/bin/buildboinc.sh ) && \
+	( echo '		${ANDROID_NDK_HOME}/build/tools/make-standalone-toolchain.sh --arch=${ANDROID_ARCH} --platform=android-${COMPILE_SDK} --install-dir=${ANDROID_TC}/${ANDROID_ARCH} ${ANDROID_TC_ARGS} --force' >> /usr/local/bin/buildboinc.sh ) && \
+	( echo '	else' >> /usr/local/bin/buildboinc.sh ) && \
+	( echo '		${ANDROID_NDK_HOME}/build/tools/make_standalone_toolchain.py --arch ${ANDROID_ARCH} --api ${COMPILE_SDK} --install-dir ${ANDROID_TC}/${ANDROID_ARCH} ${ANDROID_TC_ARGS} --force' >> /usr/local/bin/buildboinc.sh ) && \
+	( echo '	fi' >> /usr/local/bin/buildboinc.sh ) && \
+	( echo '#fi' >> /usr/local/bin/buildboinc.sh ) && \
 	( echo 'cd /opt/src/boinc/android' >> /usr/local/bin/buildboinc.sh ) && \
 	( echo './build_androidtc_${ANDROID_ARCH}.sh 2>&1 | tee build_androidtc_${ANDROID_ARCH}.log' >> /usr/local/bin/buildboinc.sh ) && \
 	( echo 'assert_no_fatal.sh build_androidtc_${ANDROID_ARCH}.log' >> /usr/local/bin/buildboinc.sh ) && \
@@ -350,96 +367,6 @@ RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/assert_no_fatal.sh' ) 
 #TODO: add script to sign apk
 
 # patch to fix "clean" and low API on new ndk for openssl build scripts
-# RUN ( echo 'diff --git a/android/build_openssl_arm.sh b/android/build_openssl_arm.sh' > /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo 'index 9161dd3..4946bae 100755' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '--- a/android/build_openssl_arm.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+++ b/android/build_openssl_arm.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '@@ -34,8 +34,8 @@ export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' if [ -n "$COMPILEOPENSSL" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' echo "================building openssl from $OPENSSL============================="' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' cd $OPENSSL' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '-make clean' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+make distclean' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' fi' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' ./Configure linux-generic32 no-shared no-dso -DL_ENDIAN --openssldir="$TCINCLUDES/ssl"' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo 'diff --git a/android/build_openssl_arm64.sh b/android/build_openssl_arm64.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo 'index 7a2c526..86d1c3a 100755' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '--- a/android/build_openssl_arm64.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+++ b/android/build_openssl_arm64.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '@@ -34,8 +34,8 @@ export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' if [ -n "$COMPILEOPENSSL" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' echo "================building openssl from $OPENSSL============================="' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' cd $OPENSSL' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '-make clean' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+make distclean' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' fi' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' ./Configure linux-generic32 no-shared no-dso -DL_ENDIAN --openssldir="$TCINCLUDES/ssl"' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo 'diff --git a/android/build_openssl_mips.sh b/android/build_openssl_mips.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo 'index 849f489..40eb030 100755' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '--- a/android/build_openssl_mips.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+++ b/android/build_openssl_mips.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '@@ -34,8 +34,8 @@ export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' if [ -n "$COMPILEOPENSSL" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' echo "================building openssl from $OPENSSL============================="' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' cd $OPENSSL' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '-make clean' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+make distclean' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' fi' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' ./Configure linux-generic32 no-shared no-dso -DL_ENDIAN --openssldir="$TCINCLUDES/ssl"' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo 'diff --git a/android/build_openssl_mips64.sh b/android/build_openssl_mips64.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo 'index 0d2ff56..ca8d3ec 100755' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '--- a/android/build_openssl_mips64.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+++ b/android/build_openssl_mips64.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '@@ -33,8 +33,8 @@ export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' if [ -n "$COMPILEOPENSSL" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' echo "================building openssl from $OPENSSL============================="' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' cd $OPENSSL' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '-make clean' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+make distclean' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' fi' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' ./Configure linux-generic64 no-shared no-dso -DL_ENDIAN --openssldir="$TCINCLUDES/ssl"' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo 'diff --git a/android/build_openssl_x86.sh b/android/build_openssl_x86.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo 'index fc109db..a9d2616 100755' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '--- a/android/build_openssl_x86.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+++ b/android/build_openssl_x86.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '@@ -34,8 +34,8 @@ export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' if [ -n "$COMPILEOPENSSL" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' echo "================building openssl from $OPENSSL============================="' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' cd $OPENSSL' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '-make clean' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+make distclean' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' fi' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' ./Configure linux-generic32 no-shared no-dso -DL_ENDIAN --openssldir="$TCINCLUDES/ssl"' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo 'diff --git a/android/build_openssl_x86_64.sh b/android/build_openssl_x86_64.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo 'index 50c2c4d..3e317ac 100755' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '--- a/android/build_openssl_x86_64.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+++ b/android/build_openssl_x86_64.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '@@ -34,8 +34,8 @@ export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' if [ -n "$COMPILEOPENSSL" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' echo "================building openssl from $OPENSSL============================="' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' cd $OPENSSL' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '-make clean' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo '+make distclean' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' fi' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_openssl_sh.patch ) && \
-	# ( echo ' ./Configure linux-x86_64 no-shared no-dso -DL_ENDIAN --openssldir="$TCINCLUDES/ssl"' >> /boinc_patches/build_openssl_sh.patch )
 RUN ( echo 'diff --git a/android/build_openssl_arm.sh b/android/build_openssl_arm.sh' > /boinc_patches/build_openssl_sh.patch ) && \
 	( echo 'index 9161dd3..b71372a 100755' >> /boinc_patches/build_openssl_sh.patch ) && \
 	( echo '--- a/android/build_openssl_arm.sh' >> /boinc_patches/build_openssl_sh.patch ) && \
@@ -599,6 +526,10 @@ RUN ( echo 'diff --git a/android/build_openssl_arm.sh b/android/build_openssl_ar
 	( echo '' >> /boinc_patches/build_openssl_sh.patch )
 
 # patch to fix "clean" and low API on new ndk for curl build scripts
+#WARNING: In this patch, we are disabling warnings for curl build;
+#this is needed as there is a warning that is thrown incorrectly with
+#some ndk versions that when used in conjunction with certain cURL
+#versions, results in a build failure when it should not
 RUN ( echo 'diff --git a/android/build_curl_arm.sh b/android/build_curl_arm.sh' > /boinc_patches/build_curl_sh.patch ) && \
 	( echo 'index a6b04f5..0e12df2 100755' >> /boinc_patches/build_curl_sh.patch ) && \
 	( echo '--- a/android/build_curl_arm.sh' >> /boinc_patches/build_curl_sh.patch ) && \
@@ -960,10 +891,7 @@ RUN ( echo 'diff --git a/android/build_boinc_arm.sh b/android/build_boinc_arm.sh
 	
 #TODO: give some mechanism to cancel sdk setup and libraries source dl if getboinc doesnt succeed (flag file?)
 	
-#TODO: add code to have separate toolchain and platform for 64 bit in case api too low for 64 bit (under 21)
-#TODO: add api level check and warning for 64 bit
-#TODO: set compile_sdk to min sdk and allow set max
-#TODO: add patch for 32 bit to disable _FILE_OFFSET for boinc, boinc lib, and wrapper; this will make unified with stl=libc++ work
+#P TODO: add patch for 32 bit to disable _FILE_OFFSET for boinc, boinc lib, and wrapper; this will make unified with stl=libc++ work
 	
 # patch to fix "clean" for libraries
 RUN ( echo 'diff --git a/android/build_libraries_arm.sh b/android/build_libraries_arm.sh' > /boinc_patches/build_libraries_sh.patch ) && \
