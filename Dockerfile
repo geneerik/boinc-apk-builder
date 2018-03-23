@@ -156,8 +156,8 @@ RUN ( echo 'diff --git a/client/hostinfo_unix.cpp b/client/hostinfo_unix.cpp' > 
 #patch to set API version and eliminate buildToolsVersion
 #from /opt/src/boinc/android/BOINC/app/build.gradle
 ENV MIN_ANDROID_API_VERSION ${MIN_ANDROID_API_VERSION:-16}
-ENV APK_COMPILE_API_VERSION ${APK_COMPILE_API_VERSION:-23}
-ENV APK_TARGET_API_VERSION ${APK_TARGET_API_VERSION:-23}
+ENV APK_COMPILE_API_VERSION ${APK_COMPILE_API_VERSION:-27}
+ENV APK_TARGET_API_VERSION ${APK_TARGET_API_VERSION:-27}
 
 #TODO: the regex matches here for sed are pretty lame and dangerous; this should be made safer
 RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/patch_build_gradle.sh' ) && \
@@ -171,6 +171,7 @@ RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/patch_build_gradle.sh'
 #Original version was 2.14.1, but that is too low for
 #automatic build tools selection (4.1 or higher needed)
 ENV GRADLE_VERSION ${GRADLE_VERSION:-4.1}
+ENV GRADLE_USER_HOME /opt/gradle
 #patch to change gradle version in /opt/src/boinc/android/BOINC/gradle/wrapper/gradle-wrapper.properties
 RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/patch_gradle_wrapper.sh' ) && \
 	( echo 'set -euf -o pipefail' >> /usr/local/bin/patch_gradle_wrapper.sh ) && \
@@ -203,10 +204,10 @@ RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/getboinc.sh' ) && \
 ##Note: these should only be needed when building the APK
 ##and are downloaded automatically
 	
-#P TODO: bring this to a working start with ndk 16
 #0 is a magic version number that will make the script use
 #sdkmanager get the latest NDK rather than downloading a specific one
-ENV ANDROID_NDK_VERSION ${ANDROID_NDK_VERSION:-r15c}
+#ENV ANDROID_NDK_VERSION ${ANDROID_NDK_VERSION:-r15c}
+ENV ANDROID_NDK_VERSION ${ANDROID_NDK_VERSION:-0}
 	
 #Create script to get android ndk and sdk and create build tool chain
 RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/getandtools.sh' ) && \
@@ -310,7 +311,8 @@ RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/buildboincapkonly.sh' 
 # code to build all targets then apk; this is the master scipt!
 RUN ( bash -c 'echo -e "#!/bin/bash\n\n" > /usr/local/bin/buildboincapkall.sh' ) && \
 	( echo 'set -euf -o pipefail' >> /usr/local/bin/buildboincapkall.sh ) && \
-	( echo 'buildboincforalltargets.sh && buildboincapkonly.sh' >> /usr/local/bin/buildboincapkall.sh ) && \
+	( echo 'buildboincforalltargets.sh' >> /usr/local/bin/buildboincapkall.sh ) && \
+	( echo 'buildboincapkonly.sh' >> /usr/local/bin/buildboincapkall.sh ) && \
 	( echo 'echo "Successfully built all targets and loaded apk for boinc!"' >> /usr/local/bin/buildboincapkall.sh ) && \
 	( echo 'echo "Today is a great day for science"' >> /usr/local/bin/buildboincapkall.sh ) && \
 	chmod +x /usr/local/bin/buildboincapkall.sh
@@ -335,8 +337,8 @@ RUN ( echo 'diff --git a/android/BOINC/build.gradle b/android/BOINC/build.gradle
 	( echo ' }' >> /boinc_patches/apk_build_gradle.patch ) && \
 	( echo '' >> /boinc_patches/apk_build_gradle.patch )
 
-#TODO: patch build boinc libs and wrapper with -D__ANDROID_API__=${COMPILE_SDK}
-ENV ANDROID_TC_ARGS ${ANDROID_TC_ARGS:---deprecated-headers}
+#ENV ANDROID_TC_ARGS ${ANDROID_TC_ARGS:---deprecated-headers}
+ENV ANDROID_TC_ARGS ${ANDROID_TC_ARGS:---stl=libc++}
 
 ENV TOOL_TO_BUILD_TC ${TOOL_TO_BUILD_TC:-py}
 
@@ -725,273 +727,654 @@ RUN ( echo 'diff --git a/android/build_curl_arm.sh b/android/build_curl_arm.sh' 
 	( echo '' >> /boinc_patches/build_curl_sh.patch )
 	
 # patch to fix "clean" and low API on new ndk for boinc build scripts
-RUN ( echo 'diff --git a/android/build_boinc_arm.sh b/android/build_boinc_arm.sh' > /boinc_patches/build_boinc_sh.patch ) && \
-	( echo 'index 9ebfc09..ddb5a29 100755' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '--- a/android/build_boinc_arm.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+++ b/android/build_boinc_arm.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -23,8 +23,8 @@ export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export CC=arm-linux-androideabi-gcc' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export CXX=arm-linux-androideabi-g++' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export LD=arm-linux-androideabi-ld' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -march=armv7-a"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -march=armv7-a"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -march=armv7-a -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -march=armv7-a -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie -march=armv7-a -Wl,--fix-cortex-a8"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -35,7 +35,7 @@ export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "==================building BOINC from $BOINC=========================="' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd $BOINC' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' make distclean' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' fi' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -49,7 +49,9 @@ make stage' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' ' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "Stripping Binaries"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd stage/usr/local/bin' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+set +f' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' arm-linux-androideabi-strip *' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+set -f' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd ../../../../' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' ' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "Copy Assets"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo 'diff --git a/android/build_boinc_arm64.sh b/android/build_boinc_arm64.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo 'index f63385e..2480608 100755' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '--- a/android/build_boinc_arm64.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+++ b/android/build_boinc_arm64.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -23,8 +23,8 @@ export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export CC=aarch64-linux-android-gcc' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export CXX=aarch64-linux-android-g++' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export LD=aarch64-linux-android-ld' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -35,7 +35,7 @@ export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "==================building BOINC from $BOINC=========================="' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd $BOINC' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' make distclean' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' fi' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -49,7 +49,9 @@ make stage' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' ' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "Stripping Binaries"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd stage/usr/local/bin' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+set +f' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' aarch64-linux-android-strip *' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+set -f' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd ../../../../' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' ' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "Copy Assets"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo 'diff --git a/android/build_boinc_mips.sh b/android/build_boinc_mips.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo 'index 2283c4f..4aaeaf4 100755' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '--- a/android/build_boinc_mips.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+++ b/android/build_boinc_mips.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -23,8 +23,8 @@ export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export CC=mipsel-linux-android-gcc' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export CXX=mipsel-linux-android-g++' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export LD=mipsel-linux-android-ld' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -35,7 +35,7 @@ export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "==================building BOINC from $BOINC=========================="' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd $BOINC' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' make distclean' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' fi' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -49,7 +49,9 @@ make stage' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' ' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "Stripping Binaries"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd stage/usr/local/bin' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+set +f' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' mipsel-linux-android-strip *' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+set -f' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd ../../../../' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' ' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "Copy Assets"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo 'diff --git a/android/build_boinc_mips64.sh b/android/build_boinc_mips64.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo 'index 2a97cf6..234cc6f 100755' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '--- a/android/build_boinc_mips64.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+++ b/android/build_boinc_mips64.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -23,8 +23,8 @@ export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export CC=mips64el-linux-android-gcc' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export CXX=mips64el-linux-android-g++' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export LD=mips64el-linux-android-ld' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export LDFLAGS="-L$TCSYSROOT/usr/lib64 -L$TCINCLUDES/lib64 -llog -fPIE -pie"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -35,7 +35,7 @@ export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "==================building BOINC from $BOINC=========================="' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd $BOINC' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' make distclean' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' fi' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -49,7 +49,9 @@ make stage' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' ' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "Stripping Binaries"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd stage/usr/local/bin' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+set +f' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' mips64el-linux-android-strip *' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+set -f' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd ../../../../' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' ' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "Copy Assets"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo 'diff --git a/android/build_boinc_x86.sh b/android/build_boinc_x86.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo 'index a96e525..e299ed2 100755' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '--- a/android/build_boinc_x86.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+++ b/android/build_boinc_x86.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -23,8 +23,8 @@ export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export CC=i686-linux-android-gcc' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export CXX=i686-linux-android-g++' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export LD=i686-linux-android-ld' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -35,7 +35,7 @@ export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "==================building BOINC from $BOINC=========================="' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd $BOINC' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' make distclean' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' fi' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -49,7 +49,9 @@ make stage' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' ' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "Stripping Binaries"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd stage/usr/local/bin' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+set +f' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' i686-linux-android-strip *' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+set -f' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd ../../../../' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' ' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "Copy Assets"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo 'diff --git a/android/build_boinc_x86_64.sh b/android/build_boinc_x86_64.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo 'index d41e50a..c64a268 100755' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '--- a/android/build_boinc_x86_64.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+++ b/android/build_boinc_x86_64.sh' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -23,8 +23,8 @@ export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export CC=x86_64-linux-android-gcc' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export CXX=x86_64-linux-android-g++' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export LD=x86_64-linux-android-ld' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export LDFLAGS="-L$TCSYSROOT/usr/lib64 -L$TCINCLUDES/lib64 -llog -fPIE -pie"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -35,7 +35,7 @@ export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "==================building BOINC from $BOINC=========================="' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd $BOINC' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' make distclean' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' fi' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '@@ -49,7 +49,9 @@ make stage' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' ' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "Stripping Binaries"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd stage/usr/local/bin' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+set +f' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' x86_64-linux-android-strip *' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '+set -f' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' cd ../../../../' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' ' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo ' echo "Copy Assets"' >> /boinc_patches/build_boinc_sh.patch ) && \
-	( echo '' >> /boinc_patches/build_boinc_sh.patch )
+RUN ( echo 'diff --git a/android/build_boinc_arm.sh b/android/build_boinc_arm.sh' > /boinc_patches/build_boinc_sh.patch) && \
+	( echo 'index 9ebfc09..02da672 100755' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '--- a/android/build_boinc_arm.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+++ b/android/build_boinc_arm.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -1,4 +1,5 @@' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-#/bin/sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+#!/bin/sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set -euf' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' #' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' # See: http://boinc.berkeley.edu/trac/wiki/AndroidBuildClient#' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -18,14 +19,15 @@ export TCBINARIES="$ANDROIDTC/bin"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export TCINCLUDES="$ANDROIDTC/arm-linux-androideabi"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export TCSYSROOT="$ANDROIDTC/sysroot"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export STDCPPTC="$TCINCLUDES/lib/libstdc++.a"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export TCCPPINC="${ANDROIDTC}/include/c++/4.9.x"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export CC=arm-linux-androideabi-gcc' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export CXX=arm-linux-androideabi-g++' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export LD=arm-linux-androideabi-ld' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -march=armv7-a"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -march=armv7-a"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie -march=armv7-a -Wl,--fix-cortex-a8"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -march=armv7-a -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -march=armv7-a -D__ANDROID_API__=${COMPILE_SDK} -isystem ${TCCPPINC}"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie -march=armv7-a -Wl,--fix-cortex-a8 -static-libstdc++"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -35,12 +37,14 @@ export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "==================building BOINC from $BOINC=========================="' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd $BOINC' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' make distclean' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ./_autosetup' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-./configure --host=arm-linux --with-boinc-platform="arm-android-linux-gnu" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-shared --enable-static' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+cp -a configure configure_no_fo_64' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo "+sed -i \"s@ac_cv_sys_file_offset_bits=no; break@ac_cv_sys_file_offset_bits=no; break\\\nfi\\\nif true; then :\\\n  ac_cv_sys_file_offset_bits=no; break@\" configure_no_fo_64" >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+./configure_no_fo_64 --host=arm-linux --with-boinc-platform="arm-android-linux-gnu" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-shared --enable-static' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' sed -e "s%^CLIENTLIBS *= *.*$%CLIENTLIBS = -lm $STDCPPTC%g" client/Makefile > client/Makefile.out' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' mv client/Makefile.out client/Makefile' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -49,7 +53,9 @@ make stage' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "Stripping Binaries"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd stage/usr/local/bin' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set +f' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' arm-linux-androideabi-strip *' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set -f' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd ../../../../' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "Copy Assets"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo 'diff --git a/android/build_boinc_arm64.sh b/android/build_boinc_arm64.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo 'index f63385e..5e4bcc1 100755' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '--- a/android/build_boinc_arm64.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+++ b/android/build_boinc_arm64.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -1,4 +1,5 @@' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-#/bin/sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+#!/bin/sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set -euf' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' #' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' # See: http://boinc.berkeley.edu/trac/wiki/AndroidBuildClient#' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -18,13 +19,14 @@ export TCBINARIES="$ANDROIDTC/bin"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export TCINCLUDES="$ANDROIDTC/aarch64-linux-android"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export TCSYSROOT="$ANDROIDTC/sysroot"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export STDCPPTC="$TCINCLUDES/lib/libstdc++.a"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export TCCPPINC="${ANDROIDTC}/include/c++/4.9.x"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export CC=aarch64-linux-android-gcc' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export CXX=aarch64-linux-android-g++' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export LD=aarch64-linux-android-ld' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK} -isystem ${TCCPPINC} -static-libstdc++"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -35,7 +37,7 @@ export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "==================building BOINC from $BOINC=========================="' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd $BOINC' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' make distclean' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -49,7 +51,9 @@ make stage' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "Stripping Binaries"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd stage/usr/local/bin' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set +f' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' aarch64-linux-android-strip *' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set -f' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd ../../../../' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "Copy Assets"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo 'diff --git a/android/build_boinc_mips.sh b/android/build_boinc_mips.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo 'index 2283c4f..c9460cb 100755' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '--- a/android/build_boinc_mips.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+++ b/android/build_boinc_mips.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -1,4 +1,5 @@' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-#/bin/sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+#!/bin/sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set -euf' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' #' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' # See: http://boinc.berkeley.edu/trac/wiki/AndroidBuildClient#' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -18,14 +19,15 @@ export TCBINARIES="$ANDROIDTC/bin"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export TCINCLUDES="$ANDROIDTC/mipsel-linux-android"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export TCSYSROOT="$ANDROIDTC/sysroot"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export STDCPPTC="$TCINCLUDES/lib/libstdc++.a"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export TCCPPINC="${ANDROIDTC}/include/c++/4.9.x"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export CC=mipsel-linux-android-gcc' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export CXX=mipsel-linux-android-g++' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export LD=mipsel-linux-android-ld' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK} -isystem ${TCCPPINC}"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie -static-libstdc++"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -35,12 +37,14 @@ export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "==================building BOINC from $BOINC=========================="' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd $BOINC' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' make distclean' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ./_autosetup' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-./configure --host=mipsel-linux --with-boinc-platform="mipsel-android-linux-gnu" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-shared --enable-static' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+cp -a configure configure_no_fo_64' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo "+sed -i \"s@ac_cv_sys_file_offset_bits=no; break@ac_cv_sys_file_offset_bits=no; break\\\nfi\\\nif true; then :\\\n  ac_cv_sys_file_offset_bits=no; break@\" configure_no_fo_64" >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+./configure_no_fo_64 --host=mipsel-linux --with-boinc-platform="mipsel-android-linux-gnu" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-shared --enable-static' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' sed -e "s%^CLIENTLIBS *= *.*$%CLIENTLIBS = -lm $STDCPPTC%g" client/Makefile > client/Makefile.out' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' mv client/Makefile.out client/Makefile' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -49,7 +53,9 @@ make stage' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "Stripping Binaries"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd stage/usr/local/bin' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set +f' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' mipsel-linux-android-strip *' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set -f' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd ../../../../' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "Copy Assets"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo 'diff --git a/android/build_boinc_mips64.sh b/android/build_boinc_mips64.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo 'index 2a97cf6..28e969d 100755' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '--- a/android/build_boinc_mips64.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+++ b/android/build_boinc_mips64.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -1,4 +1,5 @@' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-#/bin/sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+#!/bin/sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set -euf' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' #' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' # See: http://boinc.berkeley.edu/trac/wiki/AndroidBuildClient#' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -18,14 +19,15 @@ export TCBINARIES="$ANDROIDTC/bin"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export TCINCLUDES="$ANDROIDTC/mips64el-linux-android"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export TCSYSROOT="$ANDROIDTC/sysroot"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export STDCPPTC="$TCINCLUDES/lib64/libstdc++.a"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export TCCPPINC="${ANDROIDTC}/include/c++/4.9.x"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export CC=mips64el-linux-android-gcc' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export CXX=mips64el-linux-android-g++' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export LD=mips64el-linux-android-ld' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export LDFLAGS="-L$TCSYSROOT/usr/lib64 -L$TCINCLUDES/lib64 -llog -fPIE -pie"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK} -isystem ${TCCPPINC}"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export LDFLAGS="-L$TCSYSROOT/usr/lib64 -L$TCINCLUDES/lib64 -llog -fPIE -pie -static-libstdc++"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -35,7 +37,7 @@ export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "==================building BOINC from $BOINC=========================="' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd $BOINC' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' make distclean' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -49,7 +51,9 @@ make stage' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "Stripping Binaries"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd stage/usr/local/bin' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set +f' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' mips64el-linux-android-strip *' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set -f' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd ../../../../' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "Copy Assets"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo 'diff --git a/android/build_boinc_x86.sh b/android/build_boinc_x86.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo 'index a96e525..ff73905 100755' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '--- a/android/build_boinc_x86.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+++ b/android/build_boinc_x86.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -1,4 +1,5 @@' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-#/bin/sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+#!/bin/sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set -euf' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' #' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' # See: http://boinc.berkeley.edu/trac/wiki/AndroidBuildClient#' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -18,14 +19,15 @@ export TCBINARIES="$ANDROIDTC/bin"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export TCINCLUDES="$ANDROIDTC/i686-linux-android"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export TCSYSROOT="$ANDROIDTC/sysroot"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export STDCPPTC="$TCINCLUDES/lib/libstdc++.a"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export TCCPPINC="${ANDROIDTC}/include/c++/4.9.x"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export CC=i686-linux-android-gcc' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export CXX=i686-linux-android-g++' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export LD=i686-linux-android-ld' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK} -isystem ${TCCPPINC}"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie -static-libstdc++"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -35,12 +37,14 @@ export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "==================building BOINC from $BOINC=========================="' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd $BOINC' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' make distclean' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ./_autosetup' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-./configure --host=i686-linux --with-boinc-platform="x86-android-linux-gnu" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-shared --enable-static' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+cp -a configure configure_no_fo_64' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo "+sed -i \"s@ac_cv_sys_file_offset_bits=no; break@ac_cv_sys_file_offset_bits=no; break\\\nfi\\\nif true; then :\\\n  ac_cv_sys_file_offset_bits=no; break@\" configure_no_fo_64" >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+./configure_no_fo_64 --host=i686-linux --with-boinc-platform="x86-android-linux-gnu" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-shared --enable-static' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' sed -e "s%^CLIENTLIBS *= *.*$%CLIENTLIBS = -lm $STDCPPTC%g" client/Makefile > client/Makefile.out' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' mv client/Makefile.out client/Makefile' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -49,7 +53,9 @@ make stage' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "Stripping Binaries"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd stage/usr/local/bin' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set +f' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' i686-linux-android-strip *' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set -f' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd ../../../../' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "Copy Assets"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo 'diff --git a/android/build_boinc_x86_64.sh b/android/build_boinc_x86_64.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo 'index d41e50a..11f8459 100755' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '--- a/android/build_boinc_x86_64.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+++ b/android/build_boinc_x86_64.sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -1,4 +1,5 @@' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-#/bin/sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+#!/bin/sh' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set -euf' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' #' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' # See: http://boinc.berkeley.edu/trac/wiki/AndroidBuildClient#' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -18,14 +19,15 @@ export TCBINARIES="$ANDROIDTC/bin"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export TCINCLUDES="$ANDROIDTC/x86_64-linux-android"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export TCSYSROOT="$ANDROIDTC/sysroot"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export STDCPPTC="$TCINCLUDES/lib64/libstdc++.a"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export TCCPPINC="${ANDROIDTC}/include/c++/4.9.x"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export CC=x86_64-linux-android-gcc' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export CXX=x86_64-linux-android-g++' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export LD=x86_64-linux-android-ld' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-export LDFLAGS="-L$TCSYSROOT/usr/lib64 -L$TCINCLUDES/lib64 -llog -fPIE -pie"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -DANDROID_64 -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK} -isystem ${TCCPPINC}"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+export LDFLAGS="-L$TCSYSROOT/usr/lib64 -L$TCINCLUDES/lib64 -llog -fPIE -pie -static-libstdc++"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -35,7 +37,7 @@ export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "==================building BOINC from $BOINC=========================="' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd $BOINC' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' make distclean' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '@@ -49,7 +51,9 @@ make stage' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "Stripping Binaries"' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd stage/usr/local/bin' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set +f' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' x86_64-linux-android-strip *' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo '+set -f' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' cd ../../../../' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_boinc_sh.patch) && \
+	( echo ' echo "Copy Assets"' >> /boinc_patches/build_boinc_sh.patch)
 	
 #TODO: give some mechanism to cancel sdk setup and libraries source dl if getboinc doesnt succeed (flag file?)
 	
-#P TODO: add patch for 32 bit to disable _FILE_OFFSET for boinc, boinc lib, and wrapper; this will make unified with stl=libc++ work
-	
 # patch to fix "clean" for libraries
-RUN ( echo 'diff --git a/android/build_libraries_arm.sh b/android/build_libraries_arm.sh' > /boinc_patches/build_libraries_sh.patch ) && \
-	( echo 'index 9e69ac4..aa68576 100755' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '--- a/android/build_libraries_arm.sh' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '+++ b/android/build_libraries_arm.sh' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '@@ -37,8 +37,8 @@ if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' ' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' echo "==================building Libraries from $BOINC=========================="' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' cd $BOINC' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '-make clean' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '+make distclean' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' fi' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' ./_autosetup' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo 'diff --git a/android/build_libraries_mips.sh b/android/build_libraries_mips.sh' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo 'index 6a76558..760560c 100755' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '--- a/android/build_libraries_mips.sh' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '+++ b/android/build_libraries_mips.sh' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '@@ -37,8 +37,8 @@ if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' ' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' echo "==================building Libraries from $BOINC=========================="' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' cd $BOINC' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '-make clean' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '+make distclean' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' fi' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' ./_autosetup' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo 'diff --git a/android/build_libraries_x86.sh b/android/build_libraries_x86.sh' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo 'index 2a2a295..c07a191 100755' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '--- a/android/build_libraries_x86.sh' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '+++ b/android/build_libraries_x86.sh' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '@@ -14,7 +14,7 @@ MAKECLEAN="yes"' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' export BOINC=".." #BOINC source code' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' ' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' export ANDROID_TC="${ANDROID_TC:-$HOME/android-tc}"' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '-export ANDROIDTC="${ANDROID_TC_X86:-$ANDROID_TC/x86"' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '+export ANDROIDTC="${ANDROID_TC_X86:-$ANDROID_TC/x86}"' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' export TCBINARIES="$ANDROIDTC/bin"' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' export TCINCLUDES="$ANDROIDTC/i686-linux-android"' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' export TCSYSROOT="$ANDROIDTC/sysroot"' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '@@ -37,8 +37,8 @@ if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' ' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' echo "==================building Libraries from $BOINC=========================="' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' cd $BOINC' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '-make clean' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo '+make distclean' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' fi' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_libraries_sh.patch ) && \
-	( echo ' ./_autosetup' >> /boinc_patches/build_libraries_sh.patch )
+RUN ( echo 'diff --git a/android/build_libraries_arm.sh b/android/build_libraries_arm.sh' > /boinc_patches/build_libraries_sh.patch) && \
+	( echo 'index 9e69ac4..3e9d0ff 100755' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '--- a/android/build_libraries_arm.sh' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+++ b/android/build_libraries_arm.sh' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '@@ -1,4 +1,5 @@' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-#/bin/sh' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+#!/bin/sh' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+set -euf' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' #' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' # See: http://boinc.berkeley.edu/trac/wiki/AndroidBuildApp#' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '@@ -19,17 +20,20 @@ export TCBINARIES="$ANDROIDTC/bin"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export TCINCLUDES="$ANDROIDTC/arm-linux-androideabi"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export TCSYSROOT="$ANDROIDTC/sysroot"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export STDCPPTC="$TCINCLUDES/lib/libstdc++.a"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+export TCCPPINC="${ANDROIDTC}/include/c++/4.9.x"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export CC=arm-linux-androideabi-gcc' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export CXX=arm-linux-androideabi-g++' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export LD=arm-linux-androideabi-ld' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK} -isystem ${TCCPPINC} -v"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie -lc++_shared"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+echo "CXXFLAGS=${CXXFLAGS}"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' # Prepare android toolchain and environment' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ./build_androidtc_arm.sh' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '@@ -37,12 +41,14 @@ if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' echo "==================building Libraries from $BOINC=========================="' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' cd $BOINC' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-make clean' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+make distclean' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ./_autosetup' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-./configure --host=arm-linux --with-boinc-platform="arm-android-linux-gnu" --prefix=$TCINCLUDES --libdir="$TCINCLUDES/lib" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-client --disable-shared --enable-static --enable-boinczip' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+cp -a configure configure_no_fo_64' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo "+sed -i \"s@ac_cv_sys_file_offset_bits=no; break@ac_cv_sys_file_offset_bits=no; break\\\nfi\\\nif true; then :\\\n  ac_cv_sys_file_offset_bits=no; break@\" configure_no_fo_64" >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+./configure_no_fo_64 --host=arm-linux --with-boinc-platform="arm-android-linux-gnu" --prefix=$TCINCLUDES --libdir="$TCINCLUDES/lib" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-client --disable-shared --enable-static --enable-boinczip' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' make' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' make stage' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo 'diff --git a/android/build_libraries_mips.sh b/android/build_libraries_mips.sh' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo 'index 6a76558..79f9e86 100755' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '--- a/android/build_libraries_mips.sh' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+++ b/android/build_libraries_mips.sh' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '@@ -1,4 +1,5 @@' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-#/bin/sh' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+#!/bin/sh' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+set -euf' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' #' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' # See: http://boinc.berkeley.edu/trac/wiki/AndroidBuildApp#' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '@@ -19,14 +20,15 @@ export TCBINARIES="$ANDROIDTC/bin"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export TCINCLUDES="$ANDROIDTC/mipsel-linux-android"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export TCSYSROOT="$ANDROIDTC/sysroot"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export STDCPPTC="$TCINCLUDES/lib/libstdc++.a"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+export TCCPPINC="${ANDROIDTC}/include/c++/4.9.x"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export CC=mipsel-linux-android-gcc' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export CXX=mipsel-linux-android-g++' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export LD=mipsel-linux-android-ld' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK} -isystem ${TCCPPINC}"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie -lc++_shared"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '@@ -37,12 +39,14 @@ if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' echo "==================building Libraries from $BOINC=========================="' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' cd $BOINC' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-make clean' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+make distclean' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ./_autosetup' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-./configure --host=mipsel-linux --with-boinc-platform="mipsel-android-linux-gnu" --prefix=$TCINCLUDES --libdir="$TCINCLUDES/lib" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-client --disable-shared --enable-static --enable-boinczip' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+cp -a configure configure_no_fo_64' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo "+sed -i \"s@ac_cv_sys_file_offset_bits=no; break@ac_cv_sys_file_offset_bits=no; break\\\nfi\\\nif true; then :\\\n  ac_cv_sys_file_offset_bits=no; break@\" configure_no_fo_64" >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+./configure_no_fo_64 --host=mipsel-linux --with-boinc-platform="mipsel-android-linux-gnu" --prefix=$TCINCLUDES --libdir="$TCINCLUDES/lib" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-client --disable-shared --enable-static --enable-boinczip' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' make' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' make stage' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo 'diff --git a/android/build_libraries_x86.sh b/android/build_libraries_x86.sh' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo 'index 2a2a295..7d4474f 100755' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '--- a/android/build_libraries_x86.sh' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+++ b/android/build_libraries_x86.sh' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '@@ -1,4 +1,5 @@' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-#/bin/sh' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+#!/bin/sh' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+set -euf' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' #' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' # See: http://boinc.berkeley.edu/trac/wiki/AndroidBuildApp#' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '@@ -14,19 +15,20 @@ MAKECLEAN="yes"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export BOINC=".." #BOINC source code' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export ANDROID_TC="${ANDROID_TC:-$HOME/android-tc}"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-export ANDROIDTC="${ANDROID_TC_X86:-$ANDROID_TC/x86"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+export ANDROIDTC="${ANDROID_TC_X86:-$ANDROID_TC/x86}"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export TCBINARIES="$ANDROIDTC/bin"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export TCINCLUDES="$ANDROIDTC/i686-linux-android"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export TCSYSROOT="$ANDROIDTC/sysroot"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export STDCPPTC="$TCINCLUDES/lib/libstdc++.a"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+export TCCPPINC="${ANDROIDTC}/include/c++/4.9.x"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export CC=i686-linux-android-gcc' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export CXX=i686-linux-android-g++' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export LD=i686-linux-android-ld' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -fPIE -D__ANDROID_API__=${COMPILE_SDK} -isystem ${TCCPPINC}"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -fPIE -pie -lc++_shared"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '@@ -37,12 +39,14 @@ if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' echo "==================building Libraries from $BOINC=========================="' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' cd $BOINC' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-make clean' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+make distclean' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' ./_autosetup' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '-./configure --host=i686-linux --with-boinc-platform="x86-android-linux-gnu" --prefix=$TCINCLUDES --libdir="$TCINCLUDES/lib" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-client --disable-shared --enable-static --enable-boinczip' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+cp -a configure configure_no_fo_64' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo "+sed -i \"s@ac_cv_sys_file_offset_bits=no; break@ac_cv_sys_file_offset_bits=no; break\\\nfi\\\nif true; then :\\\n  ac_cv_sys_file_offset_bits=no; break@\" configure_no_fo_64" >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo '+./configure_no_fo_64 --host=i686-linux --with-boinc-platform="x86-android-linux-gnu" --prefix=$TCINCLUDES --libdir="$TCINCLUDES/lib" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-client --disable-shared --enable-static --enable-boinczip' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' make' >> /boinc_patches/build_libraries_sh.patch) && \
+	( echo ' make stage' >> /boinc_patches/build_libraries_sh.patch)
 
-#TODO: patch to fix "clean" for boinc wrapper build scripts
+# patch to fix "clean" for boinc wrapper build scripts
+RUN ( echo 'diff --git a/android/build_wrapper_arm.sh b/android/build_wrapper_arm.sh' > /boinc_patches/build_wrapper_sh.patch) && \
+	( echo 'index 9f3d4e6..81a4843 100755' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '--- a/android/build_wrapper_arm.sh' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+++ b/android/build_wrapper_arm.sh' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '@@ -1,4 +1,5 @@' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-#/bin/sh' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+#!/bin/sh' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+set -euf' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' #' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' # See: http://boinc.berkeley.edu/trac/wiki/AndroidBuildApp#' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '@@ -19,14 +20,15 @@ export TCBINARIES="$ANDROIDTC/bin"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export TCINCLUDES="$ANDROIDTC/arm-linux-androideabi"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export TCSYSROOT="$ANDROIDTC/sysroot"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export STDCPPTC="$TCINCLUDES/lib/libstdc++.a"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+export TCCPPINC="${ANDROIDTC}/include/c++/4.9.x"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export CC=arm-linux-androideabi-gcc' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export CXX=arm-linux-androideabi-g++' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export LD=arm-linux-androideabi-ld' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -D__ANDROID_API__=${COMPILE_SDK} -isystem ${TCCPPINC}"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -static-libstdc++"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export PTHREAD=-L.' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '@@ -39,8 +41,8 @@ if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' echo "==================building Wrapper from $BOINC=========================="' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' cd $BOINC' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-make clean' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+make distclean' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' cd samples/wrapper' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' make clean' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' cd ../.. ' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '@@ -48,7 +50,9 @@ fi' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ./_autosetup' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-./configure --host=arm-linux --with-boinc-platform="arm-android-linux-gnu" --prefix=$TCINCLUDES --libdir="$TCINCLUDES/lib" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-client --disable-shared --enable-static --enable-boinczip' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+cp -a configure configure_no_fo_64' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo "+sed -i \"s@ac_cv_sys_file_offset_bits=no; break@ac_cv_sys_file_offset_bits=no; break\\\nfi\\\nif true; then :\\\n  ac_cv_sys_file_offset_bits=no; break@\" configure_no_fo_64" >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+./configure_no_fo_64 --host=arm-linux --with-boinc-platform="arm-android-linux-gnu" --prefix=$TCINCLUDES --libdir="$TCINCLUDES/lib" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-client --disable-shared --enable-static --enable-boinczip' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' make' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo 'diff --git a/android/build_wrapper_mips.sh b/android/build_wrapper_mips.sh' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo 'index 43a6c22..996b9d0 100755' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '--- a/android/build_wrapper_mips.sh' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+++ b/android/build_wrapper_mips.sh' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '@@ -1,4 +1,5 @@' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-#/bin/sh' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+#!/bin/sh' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+set -euf' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' #' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' # See: http://boinc.berkeley.edu/trac/wiki/AndroidBuildApp#' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '@@ -19,14 +20,15 @@ export TCBINARIES="$ANDROIDTC/bin"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export TCINCLUDES="$ANDROIDTC/mipsel-linux-android"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export TCSYSROOT="$ANDROIDTC/sysroot"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export STDCPPTC="$TCINCLUDES/lib/libstdc++.a"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+export TCCPPINC="${ANDROIDTC}/include/c++/4.9.x"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export CC=mipsel-linux-android-gcc' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export CXX=mipsel-linux-android-g++' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export LD=mipsel-linux-android-ld' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -D__ANDROID_API__=${COMPILE_SDK} -isystem ${TCCPPINC}"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -static-libstdc++"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export PTHREAD=-L.' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '@@ -39,8 +41,8 @@ if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' echo "==================building Wrapper from $BOINC=========================="' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' cd $BOINC' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-make clean' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+make distclean' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' cd samples/wrapper' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' make clean' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' cd ../..' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '@@ -48,7 +50,9 @@ fi' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ./_autosetup' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-./configure --host=mipsel-linux --with-boinc-platform="mipsel-android-linux-gnu" --prefix=$TCINCLUDES --libdir="$TCINCLUDES/lib" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-client --disable-shared --enable-static --enable-boinczip' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+cp -a configure configure_no_fo_64' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo "+sed -i \"s@ac_cv_sys_file_offset_bits=no; break@ac_cv_sys_file_offset_bits=no; break\\\nfi\\\nif true; then :\\\n  ac_cv_sys_file_offset_bits=no; break@\" configure_no_fo_64" >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+./configure_no_fo_64 --host=mipsel-linux --with-boinc-platform="mipsel-android-linux-gnu" --prefix=$TCINCLUDES --libdir="$TCINCLUDES/lib" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-client --disable-shared --enable-static --enable-boinczip' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' make' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo 'diff --git a/android/build_wrapper_x86.sh b/android/build_wrapper_x86.sh' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo 'index 84df833..d5916e2 100755' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '--- a/android/build_wrapper_x86.sh' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+++ b/android/build_wrapper_x86.sh' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '@@ -1,4 +1,5 @@' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-#/bin/sh' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+#!/bin/sh' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+set -euf' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' #' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' # See: http://boinc.berkeley.edu/trac/wiki/AndroidBuildApp#' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '@@ -19,14 +20,15 @@ export TCBINARIES="$ANDROIDTC/bin"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export TCINCLUDES="$ANDROIDTC/i686-linux-android"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export TCSYSROOT="$ANDROIDTC/sysroot"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export STDCPPTC="$TCINCLUDES/lib/libstdc++.a"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+export TCCPPINC="${ANDROIDTC}/include/c++/4.9.x"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export PATH="$PATH:$TCBINARIES:$TCINCLUDES/bin"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export CC=i686-linux-android-gcc' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export CXX=i686-linux-android-g++' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export LD=i686-linux-android-ld' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+export CFLAGS="--sysroot=$TCSYSROOT -DANDROID -DDECLARE_TIMEZONE -Wall -I$TCINCLUDES/include -O3 -fomit-frame-pointer -D__ANDROID_API__=${COMPILE_SDK}"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+export CXXFLAGS="--sysroot=$TCSYSROOT -DANDROID -Wall -I$TCINCLUDES/include -funroll-loops -fexceptions -O3 -fomit-frame-pointer -D__ANDROID_API__=${COMPILE_SDK} -isystem ${TCCPPINC}"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+export LDFLAGS="-L$TCSYSROOT/usr/lib -L$TCINCLUDES/lib -llog -static-libstdc++"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export GDB_CFLAGS="--sysroot=$TCSYSROOT -Wall -g -I$TCINCLUDES/include"' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export PKG_CONFIG_SYSROOT_DIR=$TCSYSROOT' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' export PTHREAD=-L.' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '@@ -39,8 +41,8 @@ if [ -n "$COMPILEBOINC" ]; then' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' echo "==================building Wrapper from $BOINC=========================="' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' cd $BOINC' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-if [ -n "$MAKECLEAN" ]; then' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-make clean' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+if [ -n "$MAKECLEAN" -a -e Makefile ]; then' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+make distclean' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' cd samples/wrapper' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' make clean' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' cd ../..' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '@@ -48,7 +50,9 @@ fi' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' if [ -n "$CONFIGURE" ]; then' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ./_autosetup' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '-./configure --host=i686-linux --with-boinc-platform="x86-android-linux-gnu" --prefix=$TCINCLUDES --libdir="$TCINCLUDES/lib" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-client --disable-shared --enable-static --enable-boinczip' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+cp -a configure configure_no_fo_64' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo "+sed -i \"s@ac_cv_sys_file_offset_bits=no; break@ac_cv_sys_file_offset_bits=no; break\\\nfi\\\nif true; then :\\\n  ac_cv_sys_file_offset_bits=no; break@\" configure_no_fo_64" >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo '+./configure_no_fo_64 --host=i686-linux --with-boinc-platform="x86-android-linux-gnu" --prefix=$TCINCLUDES --libdir="$TCINCLUDES/lib" --with-ssl=$TCINCLUDES --disable-server --disable-manager --disable-client --disable-shared --enable-static --enable-boinczip' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' fi' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' ' >> /boinc_patches/build_wrapper_sh.patch) && \
+	( echo ' make' >> /boinc_patches/build_wrapper_sh.patch)
+
+# patch to fix building boinc for APIs under 19 on unified headers (ndk 16+)
+RUN ( echo 'diff --git a/lib/filesys.cpp b/lib/filesys.cpp' > /boinc_patches/boinc_lib_filesys_cpp.patch) && \
+	( echo 'index db90411..b3a92c6 100644' >> /boinc_patches/boinc_lib_filesys_cpp.patch) && \
+	( echo '--- a/lib/filesys.cpp' >> /boinc_patches/boinc_lib_filesys_cpp.patch) && \
+	( echo '+++ b/lib/filesys.cpp' >> /boinc_patches/boinc_lib_filesys_cpp.patch) && \
+	( echo '@@ -58,7 +58,7 @@' >> /boinc_patches/boinc_lib_filesys_cpp.patch) && \
+	( echo ' #include <sys/mount.h>' >> /boinc_patches/boinc_lib_filesys_cpp.patch) && \
+	( echo ' #endif' >> /boinc_patches/boinc_lib_filesys_cpp.patch) && \
+	( echo ' ' >> /boinc_patches/boinc_lib_filesys_cpp.patch) && \
+	( echo '-#if HAVE_SYS_STATVFS_H' >> /boinc_patches/boinc_lib_filesys_cpp.patch) && \
+	( echo '+#if HAVE_SYS_STATVFS_H && (!defined(ANDROID) || !defined(__ANDROID_API__) || __ANDROID_API__ >= 19)' >> /boinc_patches/boinc_lib_filesys_cpp.patch) && \
+	( echo ' #include <sys/statvfs.h>' >> /boinc_patches/boinc_lib_filesys_cpp.patch) && \
+	( echo ' #define STATFS statvfs' >> /boinc_patches/boinc_lib_filesys_cpp.patch) && \
+	( echo ' #elif HAVE_SYS_STATFS_H' >> /boinc_patches/boinc_lib_filesys_cpp.patch)
 	
 #start bash to keep alive
 CMD ["/bin/bash", "-c", "tail -f /dev/null"]
